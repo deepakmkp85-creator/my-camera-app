@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>WIP Tracker — Shop Floor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --accent: #f59e0b;
+    --accent2: #3b82f6;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --text: #f1f5f9;
+    --muted: #64748b;
+    --radius: 14px;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100dvh;
+    padding-bottom: 100px;
+  }
+
+  /* ─── Header ─── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .logo-mark {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 15px; color: #000; flex-shrink: 0;
+  }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+  header p  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .header-right { margin-left: auto; display: flex; gap: 8px; }
+
+  /* ─── Tabs ─── */
+  .tab-bar {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 1; min-width: 80px;
+    padding: 13px 10px 11px;
+    font-size: 12px; font-weight: 600;
+    text-align: center; cursor: pointer;
+    color: var(--muted);
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+    transition: all .2s;
+    background: none; border-top: none; border-left: none; border-right: none;
+    letter-spacing: .3px;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-count {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #000;
+    border-radius: 20px; font-size: 10px; font-weight: 800;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    margin-left: 5px;
+  }
+  .tab.active .tab-count { background: var(--accent); }
+  .tab:not(.active) .tab-count { background: var(--border); color: var(--muted); }
+
+  /* ─── Content ─── */
+  .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+  /* ─── Scan Panel ─── */
+  .scan-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .scan-panel h2 { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .8px; text-transform: uppercase; margin-bottom: 12px; }
+
+  .station-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .station-btn {
+    padding: 12px 8px;
+    border-radius: 10px;
+    border: 2px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: all .2s;
+    line-height: 1.3;
+  }
+  .station-btn .s-icon { font-size: 20px; display: block; margin-bottom: 4px; }
+  .station-btn.selected { border-color: var(--accent); background: rgba(245,158,11,.12); color: var(--accent); }
+
+  /* ─── Scanner ─── */
+  #scanner-wrap {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 1;
+    display: none;
+    margin-bottom: 12px;
+  }
+  #scanner-wrap.active { display: block; }
+  #qr-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .scan-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .scan-box {
+    width: 58%; aspect-ratio: 1;
+    border: 3px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,.45);
+    position: relative;
+  }
+  .scan-box::before, .scan-box::after,
+  .scan-corner-br::before, .scan-corner-br::after {
+    content: ''; position: absolute;
+    width: 20px; height: 20px;
+    border-color: var(--accent); border-style: solid;
+  }
+  .scan-laser {
+    position: absolute;
+    left: 5%; right: 5%; top: 50%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: laser 1.8s ease-in-out infinite;
+    border-radius: 2px;
+  }
+  @keyframes laser { 0%,100%{top:15%} 50%{top:85%} }
+
+  .manual-input-row { display: flex; gap: 8px; }
+  .manual-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 11px 14px;
+    outline: none;
+  }
+  .manual-input:focus { border-color: var(--accent2); }
+  .manual-input::placeholder { color: var(--muted); }
+
+  /* ─── Buttons ─── */
+  .btn {
+    padding: 11px 18px;
+    border-radius: 10px;
+    border: none;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    transition: all .18s;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-amber { background: var(--accent); color: #000; }
+  .btn-amber:active { opacity: .85; transform: scale(.97); }
+  .btn-blue { background: var(--accent2); color: #fff; }
+  .btn-blue:active { opacity: .85; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:active { opacity: .8; }
+  .btn-danger { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+  .btn-sm { padding: 8px 13px; font-size: 12px; border-radius: 8px; }
+
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  /* ─── Toast ─── */
+  #toast {
+    position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; font-weight: 600;
+    padding: 10px 20px; border-radius: 50px;
+    opacity: 0; pointer-events: none;
+    transition: all .25s; white-space: nowrap;
+    z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--success); color: var(--success); }
+  #toast.error   { border-color: var(--danger);  color: var(--danger);  }
+  #toast.warn    { border-color: var(--accent);  color: var(--accent);  }
+
+  /* ─── Unit Cards ─── */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+
+  .unit-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px 14px;
+    margin-bottom: 8px;
+    display: flex; align-items: flex-start; gap: 10px;
+    animation: slideIn .2s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+  .unit-card .u-icon {
+    width: 38px; height: 38px; border-radius: 9px;
+    background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .unit-card .u-body { flex: 1; min-width: 0; }
+  .unit-fab { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 2px; }
+  .unit-meta { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .unit-station-badge {
+    font-size: 10px; font-weight: 700;
+    padding: 3px 9px; border-radius: 20px;
+    background: rgba(59,130,246,.15); color: var(--accent2);
+    border: 1px solid rgba(59,130,246,.3);
+    align-self: flex-start; white-space: nowrap;
+  }
+  .unit-card .u-del {
+    background: none; border: none; color: var(--muted);
+    font-size: 18px; cursor: pointer; padding: 2px 4px;
+    line-height: 1; align-self: flex-start;
+  }
+  .unit-card .u-del:active { color: var(--danger); }
+
+  /* ─── All units tab ─── */
+  .station-group { margin-bottom: 24px; }
+  .station-group-title {
+    font-size: 12px; font-weight: 800; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .station-group-title span { color: var(--muted); font-weight: 500; }
+
+  /* ─── Empty state ─── */
+  .empty {
+    text-align: center; padding: 48px 24px;
+    color: var(--muted);
+  }
+  .empty .e-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty p { font-size: 14px; line-height: 1.6; }
+
+  /* ─── Bottom actions ─── */
+  .bottom-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex; gap: 10px;
+    z-index: 40;
+  }
+  .bottom-bar .btn { flex: 1; justify-content: center; }
+
+  /* ─── Modal ─── */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    z-index: 200; display: none;
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px 36px;
+    width: 100%; max-width: 560px;
+  }
+  .modal h3 { font-size: 17px; font-weight: 800; margin-bottom: 8px; }
+  .modal p  { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+  .modal-btns { display: flex; gap: 10px; }
+  .modal-btns .btn { flex: 1; justify-content: center; }
+
+  /* ─── Summary bar ─── */
+  .summary-strip {
+    display: flex; gap: 8px; overflow-x: auto;
+    scrollbar-width: none; margin-bottom: 16px;
+  }
+  .summary-strip::-webkit-scrollbar { display: none; }
+  .sum-chip {
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    text-align: center; min-width: 80px;
+  }
+  .sum-chip .sc-val { font-size: 22px; font-weight: 900; color: var(--accent); }
+  .sum-chip .sc-label { font-size: 10px; color: var(--muted); margin-top: 1px; letter-spacing: .3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">W</div>
+  <div>
+    <h1>WIP Tracker</h1>
+    <p id="shift-date">Shop Floor — Loading…</p>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-ghost btn-sm" onclick="openResetModal()">⟳ Reset</button>
+  </div>
+</header>
+
+<div class="tab-bar" id="tab-bar"></div>
+
+<div class="content" id="main-content"></div>
+
+<div class="bottom-bar">
+  <button class="btn btn-blue" onclick="switchToScanTab()">📷 Scan</button>
+  <button class="btn btn-amber" onclick="generateExcel()">📊 Generate Excel</button>
+</div>
+
+<div id="toast"></div>
+
+<!-- Reset Modal -->
+<div class="modal-backdrop" id="reset-modal">
+  <div class="modal">
+    <h3>Reset All Data?</h3>
+    <p>This will permanently delete all scanned units across every station. This cannot be undone.</p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeResetModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmReset()">🗑 Reset Everything</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  STATE & STORAGE
+// ═══════════════════════════════════════════
+const STATIONS = ['Assembly','Waiting for Testing','Testing','PDI'];
+const STATION_ICONS = { 'Assembly':'🔧','Waiting for Testing':'⏳','Testing':'🧪','PDI':'✅' };
+const STORAGE_KEY = 'wip_tracker_v3';
+const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+let state = {
+  activeStation: STATIONS[0],
+  activeTab: 'scan',   // 'scan' | station name | 'all'
+  units: {},           // { fabNo: { fab, tpl, model, station, date, time, ts } }
+  scannerRunning: false
+};
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ units: state.units, saved: Date.now() }));
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    // Purge entries older than 3 days
+    state.units = {};
+    for (const [k, v] of Object.entries(parsed.units || {})) {
+      if ((now - v.ts) < MAX_AGE_MS) state.units[k] = v;
+    }
+  } catch(e) { state.units = {}; }
+}
+
+// ═══════════════════════════════════════════
+//  QR PARSING
+// ═══════════════════════════════════════════
+function parseQR(raw) {
+  raw = raw.trim();
+  // Format 3: URL with fabno= parameter e.g. https://t.ly/AIRQRR?fabno=BZCS047549
+  if (raw.startsWith('http') && raw.includes('fabno=')) {
+    try {
+      const url = new URL(raw);
+      const fab = url.searchParams.get('fabno') || '';
+      if (fab) return { fab, tpl: '', model: '' };
+    } catch(e) {
+      // fallback: extract after '='
+      const fab = raw.split('fabno=')[1]?.trim() || '';
+      if (fab) return { fab, tpl: '', model: '' };
+    }
+  }
+  // Format 1: multi-line with FAB: / TPL: / Model:
+  if (raw.includes('\n') || raw.includes('FAB')) {
+    const fab   = (raw.match(/FAB\s*:\s*([^\n\r]+)/i) || [])[1]?.trim() || '';
+    const tpl   = (raw.match(/TPL\s*:\s*([^\n\r]+)/i) || [])[1]?.trim() || '';
+    const model = (raw.match(/Model\s*:\s*([^\n\r]+)/i) || [])[1]?.trim() || '';
+    if (fab) return { fab, tpl, model };
+  }
+  // Format 2: plain serial number
+  if (raw && !raw.includes(' ')) return { fab: raw, tpl: '', model: '' };
+  // Fallback — treat whole thing as FAB
+  return { fab: raw, tpl: '', model: '' };
+}
+
+function addUnit(raw) {
+  const { fab, tpl, model } = parseQR(raw);
+  if (!fab) return showToast('Could not read QR data', 'error');
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const existing = state.units[fab];
+  state.units[fab] = { fab, tpl, model, station: state.activeStation, date: dateStr, time: timeStr, ts: now.getTime() };
+  saveData();
+  if (existing) {
+    showToast(`${fab} → moved to ${state.activeStation}`, 'warn');
+  } else {
+    showToast(`${fab} added to ${state.activeStation}`, 'success');
+  }
+  render();
+}
+
+function deleteUnit(fab) {
+  delete state.units[fab];
+  saveData();
+  showToast(`${fab} removed`, 'warn');
+  render();
+}
+
+// ═══════════════════════════════════════════
+//  CAMERA / QR SCANNER
+// ═══════════════════════════════════════════
+let videoEl = null, canvasEl = null, canvasCtx = null, rafId = null, stream = null;
+
+function showCameraError(err) {
+  stopScanner();
+  let msg = '';
+  let hint = '';
+
+  if (!window.isSecureContext) {
+    msg = '⚠️ Camera requires HTTPS';
+    hint = 'Open this page via https:// or use the manual entry below.';
+  } else if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    msg = '⚠️ Camera not supported';
+    hint = 'Your browser does not support camera access. Try Chrome or Safari.';
+  } else if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+    msg = '🔒 Camera permission denied';
+    hint = 'Please allow camera access:\n• iOS: Settings → Safari → Camera → Allow\n• Android: Settings → Site Settings → Camera → Allow\nThen reload the page.';
+  } else if (err && err.name === 'NotFoundError') {
+    msg = '📷 No camera found';
+    hint = 'No camera detected on this device.';
+  } else if (err && err.name === 'NotReadableError') {
+    msg = '📷 Camera in use';
+    hint = 'Camera is being used by another app. Close it and try again.';
+  } else {
+    msg = '📷 Camera unavailable';
+    hint = err ? err.message : 'Unknown error. Use manual entry below.';
+  }
+
+  // Show error panel inside scanner wrap
+  const wrap = document.getElementById('scanner-wrap');
+  if (wrap) {
+    wrap.classList.add('active');
+    wrap.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+        height:100%;padding:20px;text-align:center;background:#0f1117;gap:10px;">
+        <div style="font-size:36px;">📷</div>
+        <div style="font-size:14px;font-weight:700;color:#f59e0b;">${msg}</div>
+        <div style="font-size:12px;color:#94a3b8;white-space:pre-line;line-height:1.6;">${hint}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="retryCamera()">↺ Retry</button>
+      </div>`;
+  }
+}
+
+async function startScanner() {
+  if (state.scannerRunning) return;
+
+  // Check HTTPS / secure context
+  if (!window.isSecureContext) { showCameraError(null); return; }
+
+  // Check API availability
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCameraError({ name: 'NotFoundError' }); return;
+  }
+
+  state.scannerRunning = true;
+
+  const wrap = document.getElementById('scanner-wrap');
+  if (!wrap) return;
+
+  // Restore original scanner HTML if it was replaced by error panel
+  if (!document.getElementById('qr-video')) {
+    wrap.innerHTML = `
+      <video id="qr-video" muted playsinline autoplay></video>
+      <div class="scan-overlay">
+        <div class="scan-box">
+          <div class="scan-laser"></div>
+        </div>
+      </div>`;
+  }
+  wrap.classList.add('active');
+
+  videoEl = document.getElementById('qr-video');
+  canvasEl = document.createElement('canvas');
+  canvasCtx = canvasEl.getContext('2d', { willReadFrequently: true });
+
+  // Try rear camera first, fall back to any camera
+  const constraints = [
+    { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  let gotStream = false;
+  for (const c of constraints) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(c);
+      gotStream = true;
+      break;
+    } catch (e) {
+      // Only hard-stop on permission denial — keep trying other constraints otherwise
+      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+        showCameraError(e); return;
+      }
+    }
+  }
+
+  if (!gotStream) { showCameraError({ name: 'NotFoundError' }); return; }
+
+  videoEl.srcObject = stream;
+  videoEl.setAttribute('playsinline', true);
+  videoEl.setAttribute('autoplay', true);
+  videoEl.muted = true;
+
+  try {
+    await videoEl.play();
+  } catch(e) {
+    // Autoplay policy — try one more time on next user gesture
+    videoEl.addEventListener('canplay', () => videoEl.play(), { once: true });
+  }
+
+  requestAnimationFrame(tick);
+}
+
+function retryCamera() {
+  state.scannerRunning = false;
+  stream = null;
+  // Rebuild scanner wrap HTML then start
+  const wrap = document.getElementById('scanner-wrap');
+  if (wrap) {
+    wrap.innerHTML = `
+      <video id="qr-video" muted playsinline autoplay></video>
+      <div class="scan-overlay">
+        <div class="scan-box">
+          <div class="scan-laser"></div>
+        </div>
+      </div>`;
+  }
+  startScanner();
+}
+
+let lastScan = 0;
+function tick() {
+  if (!state.scannerRunning) return;
+  if (videoEl && videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+    canvasEl.height = videoEl.videoHeight;
+    canvasEl.width  = videoEl.videoWidth;
+    canvasCtx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+    const img = canvasCtx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+    const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    if (code && (Date.now() - lastScan > 2500)) {
+      lastScan = Date.now();
+      addUnit(code.data);
+    }
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopScanner() {
+  state.scannerRunning = false;
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (videoEl) { try { videoEl.pause(); videoEl.srcObject = null; } catch(e){} videoEl = null; }
+  const wrap = document.getElementById('scanner-wrap');
+  if (wrap) wrap.classList.remove('active');
+}
+
+// ═══════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════
+function stationUnits(station) {
+  return Object.values(state.units).filter(u => u.station === station);
+}
+function allUnits() { return Object.values(state.units); }
+
+function render() {
+  renderTabs();
+  renderContent();
+  updateShiftDate();
+}
+
+function updateShiftDate() {
+  const el = document.getElementById('shift-date');
+  if (el) el.textContent = 'Shop Floor — ' + new Date().toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+}
+
+function renderTabs() {
+  const bar = document.getElementById('tab-bar');
+  const tabs = [
+    { id: 'scan', label: '📷 Scan' },
+    ...STATIONS.map(s => ({ id: s, label: STATION_ICONS[s] + ' ' + s, count: stationUnits(s).length })),
+    { id: 'all', label: '📋 All Units', count: allUnits().length }
+  ];
+  bar.innerHTML = tabs.map(t => `
+    <button class="tab ${state.activeTab === t.id ? 'active' : ''}" onclick="switchTab('${t.id}')">
+      ${t.label}
+      ${(t.count !== undefined && t.count > 0) ? `<span class="tab-count">${t.count}</span>` : ''}
+    </button>
+  `).join('');
+}
+
+function renderContent() {
+  const el = document.getElementById('main-content');
+  if (state.activeTab === 'scan') {
+    el.innerHTML = renderScanTab();
+    // Re-attach scanner if running
+    if (state.scannerRunning) {
+      const wrap = document.getElementById('scanner-wrap');
+      if (wrap) wrap.classList.add('active');
+    }
+  } else if (state.activeTab === 'all') {
+    el.innerHTML = renderAllTab();
+  } else {
+    el.innerHTML = renderStationTab(state.activeTab);
+  }
+}
+
+function renderScanTab() {
+  const units = stationUnits(state.activeStation);
+  return `
+    <div class="scan-panel">
+      <h2>Select Station</h2>
+      <div class="station-grid">
+        ${STATIONS.map(s => `
+          <button class="station-btn ${state.activeStation === s ? 'selected' : ''}" onclick="selectStation('${s}')">
+            <span class="s-icon">${STATION_ICONS[s]}</span>
+            ${s}
+          </button>
+        `).join('')}
+      </div>
+
+      <h2 style="margin-bottom:10px">Scan QR Code</h2>
+
+      <div id="scanner-wrap" class="${state.scannerRunning ? 'active' : ''}">
+        <video id="qr-video" muted playsinline></video>
+        <div class="scan-overlay">
+          <div class="scan-box">
+            <div class="scan-laser"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn ${state.scannerRunning ? 'btn-ghost' : 'btn-blue'}" onclick="toggleScanner()">
+          ${state.scannerRunning ? '⏹ Stop Camera' : '📷 Open Camera'}
+        </button>
+      </div>
+
+      <div class="manual-input-row">
+        <input class="manual-input" id="manual-qr" placeholder="Or type / paste QR data here…" autocomplete="off"
+          onkeydown="if(event.key==='Enter') submitManual()" />
+        <button class="btn btn-amber" onclick="submitManual()">Add</button>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">${STATION_ICONS[state.activeStation]} ${state.activeStation} — ${units.length} unit${units.length!==1?'s':''}</span>
+    </div>
+
+    ${units.length === 0 ? `
+      <div class="empty">
+        <div class="e-icon">${STATION_ICONS[state.activeStation]}</div>
+        <p>No units at <strong>${state.activeStation}</strong> yet.<br>Select this station and scan a QR code.</p>
+      </div>
+    ` : units.map(u => unitCard(u)).join('')}
+  `;
+}
+
+function renderStationTab(station) {
+  const units = stationUnits(station);
+  return `
+    <div class="section-header" style="margin-top:4px">
+      <span class="section-title">${STATION_ICONS[station]} ${station} — ${units.length} unit${units.length!==1?'s':''}</span>
+    </div>
+    ${units.length === 0 ? `
+      <div class="empty">
+        <div class="e-icon">${STATION_ICONS[station]}</div>
+        <p>No units scanned at <strong>${station}</strong>.<br>Go to the Scan tab to add units.</p>
+      </div>
+    ` : units.map(u => unitCard(u)).join('')}
+  `;
+}
+
+function renderAllTab() {
+  const total = allUnits().length;
+  if (total === 0) return `
+    <div class="empty">
+      <div class="e-icon">📋</div>
+      <p>No units scanned yet.<br>Go to the Scan tab to get started.</p>
+    </div>
+  `;
+
+  const summaryHtml = `
+    <div class="summary-strip">
+      <div class="sum-chip">
+        <div class="sc-val">${total}</div>
+        <div class="sc-label">Total</div>
+      </div>
+      ${STATIONS.map(s => `
+        <div class="sum-chip">
+          <div class="sc-val">${stationUnits(s).length}</div>
+          <div class="sc-label">${s}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const grouped = STATIONS.map(s => {
+    const su = stationUnits(s);
+    if (!su.length) return '';
+    return `
+      <div class="station-group">
+        <div class="station-group-title">
+          ${STATION_ICONS[s]} ${s} <span>(${su.length})</span>
+        </div>
+        ${su.map(u => unitCard(u)).join('')}
+      </div>
+    `;
+  }).join('');
+
+  return summaryHtml + grouped;
+}
+
+function unitCard(u) {
+  return `
+    <div class="unit-card">
+      <div class="u-icon">⚙️</div>
+      <div class="u-body">
+        <div class="unit-fab">${u.fab}</div>
+        <div class="unit-meta">
+          ${u.tpl   ? `TPL: <strong>${u.tpl}</strong><br>` : ''}
+          ${u.model ? `Model: <strong>${u.model}</strong><br>` : ''}
+          🕐 ${u.date} &nbsp;${u.time}
+        </div>
+      </div>
+      <span class="unit-station-badge">${STATION_ICONS[u.station]} ${u.station}</span>
+      <button class="u-del" onclick="deleteUnit('${u.fab}')" title="Remove">×</button>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+//  ACTIONS
+// ═══════════════════════════════════════════
+function switchTab(id) {
+  if (state.activeTab !== 'scan' && id !== 'scan') {
+    stopScanner();
+  }
+  if (id !== 'scan') stopScanner();
+  state.activeTab = id;
+  if (id !== 'scan' && id !== 'all') state.activeStation = id;
+  render();
+}
+
+function switchToScanTab() { switchTab('scan'); }
+
+function selectStation(s) {
+  state.activeStation = s;
+  render();
+  // Re-attach video if scanner running
+  if (state.scannerRunning) {
+    setTimeout(() => {
+      const v = document.getElementById('qr-video');
+      if (v && stream) { v.srcObject = stream; v.play(); }
+    }, 50);
+  }
+}
+
+function toggleScanner() {
+  if (state.scannerRunning) {
+    stopScanner();
+    render();
+  } else {
+    render(); // render first so DOM elements exist
+    setTimeout(startScanner, 50);
+  }
+}
+
+function submitManual() {
+  const inp = document.getElementById('manual-qr');
+  if (!inp || !inp.value.trim()) return showToast('Enter QR data first', 'error');
+  addUnit(inp.value.trim());
+  inp.value = '';
+}
+
+// ═══════════════════════════════════════════
+//  RESET
+// ═══════════════════════════════════════════
+function openResetModal()  { document.getElementById('reset-modal').classList.add('open'); }
+function closeResetModal() { document.getElementById('reset-modal').classList.remove('open'); }
+function confirmReset() {
+  state.units = {};
+  saveData();
+  closeResetModal();
+  stopScanner();
+  showToast('All data cleared', 'warn');
+  render();
+}
+
+// ═══════════════════════════════════════════
+//  EXCEL EXPORT
+// ═══════════════════════════════════════════
+function generateExcel() {
+  const units = allUnits();
+  if (units.length === 0) return showToast('No units to export', 'error');
+
+  const rows = [['FAB No', 'TPL', 'Model', 'Station', 'Date', 'Time']];
+  STATIONS.forEach(s => {
+    stationUnits(s).forEach(u => {
+      rows.push([u.fab, u.tpl || '', u.model || '', u.station, u.date, u.time]);
+    });
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 12 }
+  ];
+
+  // Style header row
+  const headerStyle = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1E3A5F' } }, alignment: { horizontal: 'center' } };
+  ['A1','B1','C1','D1','E1','F1'].forEach(ref => {
+    if (ws[ref]) ws[ref].s = headerStyle;
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, 'WIP Data');
+
+  // Summary sheet
+  const sumRows = [['Station', 'Unit Count']];
+  STATIONS.forEach(s => sumRows.push([s, stationUnits(s).length]));
+  sumRows.push(['', '']);
+  sumRows.push(['Total', units.length]);
+  const ws2 = XLSX.utils.aoa_to_sheet(sumRows);
+  ws2['!cols'] = [{ wch: 22 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `WIP_Report_${dateStr}.xlsx`);
+  showToast(`Exported ${units.length} units to Excel ✓`, 'success');
+}
+
+// ═══════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════
+let toastTimer;
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = '', 2800);
+}
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+loadData();
+render();
+
+// Close modal on backdrop click
+document.getElementById('reset-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeResetModal();
+});
+</script>
+</body>
+</html>
